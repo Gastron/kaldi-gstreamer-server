@@ -24,10 +24,15 @@ class DecoderPipeline2(object):
         logger.info("Creating decoder using conf: %s" % conf)
         self.create_pipeline(conf)
         self.outdir = conf.get("out-dir", None)
+        self.graphdir = conf["graph-dir"] #raise if not defined
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
         elif not os.path.isdir(self.outdir):
             raise Exception("Output directory %s already exists as a file" % self.outdir)
+        if not os.path.exists(self.graphdir):
+            os.makedirs(self.graphdir)
+        elif not os.path.isdir(self.graphdir):
+            raise Exception("Graph directory %s already exists as a file" % self.outdir)
 
         self.result_handler = None
         self.full_result_handler = None
@@ -203,7 +208,10 @@ class DecoderPipeline2(object):
         self.asr.set_property("word-syms", words_path)
 
     def _get_graph_properties(self, graph_id):
-        dirpath = os.path.join(conf["graph-dir"], graph_id)
+        if graph_id not in ("asr","custom", "hejpeter", "shorttest", "test2",
+                "testphrase", "testphrase2"):
+            raise Exception("Graph id: " + graph_id + " not valid!")
+        dirpath = os.path.join(self.graphdir, graph_id)
         fst_path = os.path.join(dirpath, "HCLG.fst")
         words_path = os.path.join(dirpath, "words.txt")
         return fst_path, words_path
