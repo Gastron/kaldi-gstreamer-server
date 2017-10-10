@@ -203,7 +203,7 @@ class DecoderPipeline2(object):
         self.asr.set_property("word-syms", words_path)
 
     def _get_graph_properties(self, graph_id):
-        dirpath = os.path.join("/opt/kaldi/egs/digitala/s5/data/isdemo17", graph_id)
+        dirpath = os.path.join(conf["graph-dir"], graph_id)
         fst_path = os.path.join(dirpath, "HCLG.fst")
         words_path = os.path.join(dirpath, "words.txt")
         return fst_path, words_path
