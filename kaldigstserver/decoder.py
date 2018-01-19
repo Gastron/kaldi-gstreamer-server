@@ -12,11 +12,18 @@ GObject.threads_init()
 Gst.init(None)
 import logging
 import thread
-import os
+import os, os.path
 
 logger = logging.getLogger(__name__)
 
 import pdb
+
+#From: https://security.openstack.org/guidelines/dg_using-file-paths.html
+def is_safe_path(basedir, path, follow_symlinks=True):
+  # resolves symbolic links
+  if follow_symlinks:
+    return os.path.realpath(path).startswith(basedir)
+  return os.path.abspath(path).startswith(basedir)
 
 class DecoderPipeline(object):
     def __init__(self, conf={}):
@@ -29,6 +36,11 @@ class DecoderPipeline(object):
                 os.mkdir(self.outdir)
             elif not os.path.isdir(self.outdir):
                 raise Exception("Output directory %s already exists as a file" % self.outdir)
+        self.graphdir = conf["graph-dir"] #raise if not defined
+        if not os.path.exists(self.graphdir):
+            os.makedirs(self.graphdir)
+        elif not os.path.isdir(self.graphdir):
+            raise Exception("Graph directory %s already exists as a file" % self.outdir)
 
         self.word_handler = None
         self.eos_handler = None
@@ -159,7 +171,7 @@ class DecoderPipeline(object):
         self.pipeline.set_state(Gst.State.NULL)
         self.request_id = "<undefined>"
 
-    def init_request(self, id, caps_str):
+    def init_request(self, id, caps_str, graph_id):
         self.request_id = id
         if caps_str and len(caps_str) > 0:
             logger.info("%s: Setting caps to %s" % (self.request_id, caps_str))
@@ -171,6 +183,9 @@ class DecoderPipeline(object):
             #self.pipeline.set_state(Gst.State.READY)
             pass
         #self.appsrc.set_state(Gst.State.PAUSED)
+
+        logger.info("%s: Setting graph with id %s" % (self.request_id, graph_id))
+        self.switch_graph(graph_id)
 
         if self.outdir:
             self.pipeline.set_state(Gst.State.PAUSED)
@@ -187,6 +202,20 @@ class DecoderPipeline(object):
         self.appsrc.emit("push-buffer", buf)
         logger.info('%s: Pipeline initialized' % (self.request_id))
 
+    def switch_graph(self, graph_id):
+        #Set the decoding graph dynamically
+        fst_path, words_path = self._get_graph_properties(graph_id)
+        self.asr.set_property("fst", fst_path)
+        self.asr.set_property("word-syms", words_path)
+
+    def _get_graph_properties(self, graph_id):
+        dirpath = os.path.join(self.graphdir, graph_id)
+        if not is_safe_path(self.graphdir, dirpath):
+            raise ValueError("Unsafe path detected!")
+        else:
+            fst_path = os.path.join(dirpath, "HCLG.fst")
+            words_path = os.path.join(dirpath, "words.txt")
+            return fst_path, words_path
 
     def process_data(self, data):
         logger.debug('%s: Pushing buffer of size %d to pipeline' % (self.request_id, len(data)))

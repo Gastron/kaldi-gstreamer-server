@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 CONNECT_TIMEOUT = 5
 SILENCE_TIMEOUT = 5
+GRAPH_TIMEOUT = 5
 USE_NNET2 = False
 
         
@@ -100,8 +101,9 @@ class ServerWebsocket(WebSocketClient):
             props = json.loads(str(m))
             content_type = props['content_type']
             self.request_id = props['id']
+            self.graph_id = props['graph_id']
             self.num_segments = 0
-            self.decoder_pipeline.init_request(self.request_id, content_type)
+            self.decoder_pipeline.init_request(self.request_id, content_type, self.graph_id)
             self.last_decoder_message = time.time()
             thread.start_new_thread(self.guard_timeout, ())
             logger.info("%s: Started timeout guard" % self.request_id)
