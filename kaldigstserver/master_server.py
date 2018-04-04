@@ -118,6 +118,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.final_result_queue = Queue()
         self.user_id = self.request.headers.get("device-id", "none")
         self.content_id = self.request.headers.get("content-id", "none")
+        self.graph_id = self.request.headers.get("graph-id", "none")
         logging.info("%s: OPEN: user='%s', content='%s'" % (self.id, self.user_id, self.content_id))
         self.worker = None
         self.error_status = 0
@@ -133,7 +134,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
                 content_type = content_type_to_caps(content_type)
                 logging.info("%s: Using content type: %s" % (self.id, content_type))
 
-            self.worker.write_message(json.dumps(dict(id=self.id, content_type=content_type, user_id=self.user_id, content_id=self.content_id)))
+            self.worker.write_message(json.dumps(dict(id=self.id, content_type=content_type, user_id=self.user_id, content_id=self.content_id, graph_id=self.graph_id)))
         except KeyError:
             logging.warn("%s: No worker available for client request" % self.id)
             self.set_status(503)
