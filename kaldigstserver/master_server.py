@@ -163,7 +163,10 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         assert self.worker is not None
         self.worker.write_message("EOS", binary=True)
         logging.info("%s: yielding..." % self.id)
-        hyp = yield tornado.gen.Task(self.get_final_hyp)
+        try:
+            hyp = yield tornado.gen.Task(self.get_final_hyp)
+        except Exception, e:
+            logging.info("%s: Error getting final hyp: %s" % (self.id, e))
         if self.error_status == 0:
             logging.info("%s: Final hyp: %s" % (self.id, hyp))
             response = {"status" : 0, "id": self.id, "hypotheses": [{"utterance" : hyp}]}
