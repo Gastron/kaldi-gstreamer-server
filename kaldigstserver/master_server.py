@@ -78,16 +78,13 @@ class MainHandler(tornado.web.RequestHandler):
         readme = os.path.join(parent_directory, "README.md")
         self.render(readme)
 
-
 def run_async(func):
     @functools.wraps(func)
     def async_func(*args, **kwargs):
         func_hl = threading.Thread(target=func, args=args, kwargs=kwargs)
         func_hl.start()
         return func_hl
-
     return async_func
-
 
 def content_type_to_caps(content_type):
     """
@@ -123,6 +120,8 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.worker = None
         self.error_status = 0
         self.error_message = None
+        self.thread_pool = tornado.concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        
         try:
             self.worker = self.application.available_workers.pop()
             self.application.send_status_update()
@@ -151,10 +150,10 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
     def put(self, *args, **kwargs):
         self.end_request(args, kwargs)
 
-    @run_async
-    def get_final_hyp(self, callback=None):
+    @tornado.concurrent.run_on_executor(executor='thread_pool')
+    def get_final_hyp(self):
         logging.info("%s: Waiting for final result..." % self.id)
-        callback(self.final_result_queue.get(block=True))
+        return self.final_result_queue.get(block=True)
 
     @tornado.web.asynchronous
     @tornado.gen.coroutine
@@ -164,7 +163,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.worker.write_message("EOS", binary=True)
         logging.info("%s: yielding..." % self.id)
         try:
-            hyp = yield tornado.gen.Task(self.get_final_hyp)
+            hyp = yield self.get_final_hyp()
         except Exception, e:
             logging.info("%s: Error getting final hyp: %s" % (self.id, e))
         if self.error_status == 0:
@@ -179,6 +178,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.application.send_status_update()
         self.worker.set_client_socket(None)
         self.worker.close()
+        
         self.finish()
         logging.info("Everything done")
 
