@@ -111,7 +111,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
 
     def prepare(self):
         self.id = str(uuid.uuid4())
-        self.final_hyp = ""
+        self.final_result = {"segments": []} #For security, don't return array as top level data structure.
         self.final_result_queue = Queue()
         self.user_id = self.request.headers.get("device-id", "none")
         self.content_id = self.request.headers.get("content-id", "none")
@@ -151,7 +151,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.end_request(args, kwargs)
 
     @tornado.concurrent.run_on_executor(executor='thread_pool')
-    def get_final_hyp(self):
+    def get_final_result(self):
         logging.info("%s: Waiting for final result..." % self.id)
         return self.final_result_queue.get(block=True)
 
@@ -162,14 +162,10 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         assert self.worker is not None
         self.worker.write_message("EOS", binary=True)
         logging.info("%s: yielding..." % self.id)
-        try:
-            hyp = yield self.get_final_hyp()
-        except Exception, e:
-            logging.info("%s: Error getting final hyp: %s" % (self.id, e))
+        final_result = yield self.get_final_result()
         if self.error_status == 0:
-            logging.info("%s: Final hyp: %s" % (self.id, hyp))
-            response = {"status" : 0, "id": self.id, "hypotheses": [{"utterance" : hyp}]}
-            self.write(response)
+            logging.info("%s: Final final_result: %s" % (self.id, final_result))
+            self.write(json.dumps(final_result))
         else:
             logging.info("%s: Error (status=%d) processing HTTP request: %s" % (self.id, self.error_status, self.error_message))
             response = {"status" : self.error_status, "id": self.id, "message": self.error_message}
@@ -189,10 +185,8 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         logging.info("%s: Receiving event %s from worker" % (self.id, event_str))
         if event["status"] == 0 and ("result" in event):
             try:
-                if len(event["result"]["hypotheses"]) > 0 and event["result"]["final"]:
-                    if len(self.final_hyp) > 0:
-                        self.final_hyp += " "
-                    self.final_hyp += event["result"]["hypotheses"][0]["transcript"]
+                if event["result"]["final"]:
+                    self.final_result["segments"].append(event)
             except:
                 e = sys.exc_info()[0]
                 logging.warn("Failed to extract hypothesis from recognition result:" + e)
@@ -202,7 +196,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
 
     def close(self):
         logging.info("%s: Receiving 'close' from worker" % (self.id))
-        self.final_result_queue.put(self.final_hyp)
+        self.final_result_queue.put(self.final_result)
 
 
 class ReferenceHandler(tornado.web.RequestHandler):
