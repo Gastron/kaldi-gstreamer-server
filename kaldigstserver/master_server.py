@@ -25,6 +25,7 @@ import tornado.gen
 import tornado.concurrent
 import settings
 import common
+import concurrent.futures
 
 
 class Application(tornado.web.Application):
@@ -47,12 +48,12 @@ class Application(tornado.web.Application):
             (r"/client/static/(.*)", tornado.web.StaticFileHandler, {'path': settings["static_path"]}),
         ]
         tornado.web.Application.__init__(self, handlers, **settings)
-        self.available_workers = set()
+        self.available_workers = Queue()
         self.status_listeners = set()
         self.num_requests_processed = 0
 
     def send_status_update_single(self, ws):
-        status = dict(num_workers_available=len(self.available_workers), num_requests_processed=self.num_requests_processed)
+        status = dict(num_workers_available=self.available_workers.qzise(), num_requests_processed=self.num_requests_processed)
         ws.write_message(json.dumps(status))
 
     def send_status_update(self):
@@ -77,14 +78,6 @@ class MainHandler(tornado.web.RequestHandler):
         parent_directory = os.path.join(current_directory, os.pardir)
         readme = os.path.join(parent_directory, "README.md")
         self.render(readme)
-
-def run_async(func):
-    @functools.wraps(func)
-    def async_func(*args, **kwargs):
-        func_hl = threading.Thread(target=func, args=args, kwargs=kwargs)
-        func_hl.start()
-        return func_hl
-    return async_func
 
 def content_type_to_caps(content_type):
     """
@@ -120,10 +113,10 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.worker = None
         self.error_status = 0
         self.error_message = None
-        self.thread_pool = tornado.concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)  
+
         try:
-            self.worker = self.application.available_workers.pop()
+            self.worker = self.application.available_workers.get()
             self.application.send_status_update()
             logging.info("%s: Using worker %s" % (self.id, self.__str__()))
             self.worker.set_client_socket(self)
@@ -150,7 +143,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
     def put(self, *args, **kwargs):
         self.end_request(args, kwargs)
 
-    @tornado.concurrent.run_on_executor(executor='thread_pool')
+    @tornado.concurrent.run_on_executor
     def get_final_result(self):
         logging.info("%s: Waiting for final result..." % self.id)
         return self.final_result_queue.get(block=True)
@@ -246,13 +239,14 @@ class WorkerSocketHandler(tornado.websocket.WebSocketHandler):
 
     def open(self):
         self.client_socket = None
-        self.application.available_workers.add(self)
+        self.application.available_workers.put(self)
         logging.info("New worker available " + self.__str__())
         self.application.send_status_update()
 
     def on_close(self):
         logging.info("Worker " + self.__str__() + " leaving")
-        self.application.available_workers.discard(self)
+        with self.application.available_workers.mutex: 
+            self.application.available_workers.queue.remove(self) #Queue.queue is a collections.deque
         if self.client_socket:
             self.client_socket.close()
         self.application.send_status_update()
@@ -288,7 +282,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         self.graph_id = self.get_argument("graph-id", "none", True)
         self.worker = None
         try:
-            self.worker = self.application.available_workers.pop()
+            self.worker = self.application.available_workers.get()
             self.application.send_status_update()
             logging.info("%s: Using worker %s" % (self.id, self.__str__()))
             self.worker.set_client_socket(self)
