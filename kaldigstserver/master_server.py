@@ -246,7 +246,10 @@ class WorkerSocketHandler(tornado.websocket.WebSocketHandler):
     def on_close(self):
         logging.info("Worker " + self.__str__() + " leaving")
         with self.application.available_workers.mutex: 
-            self.application.available_workers.queue.remove(self) #Queue.queue is a collections.deque
+            try:  
+                self.application.available_workers.queue.remove(self) #Queue.queue is a collections.deque
+            except ValueError:
+                pass #self had been removed from queue with .get() already
         if self.client_socket:
             self.client_socket.close()
         self.application.send_status_update()
