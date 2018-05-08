@@ -220,18 +220,20 @@ class DecoderPipeline2(object):
 
     def switch_graph(self, graph_id):
         #Set the decoding graph dynamically
-        fst_path, words_path = self._get_graph_properties(graph_id)
-        self.asr.set_property("fst", fst_path)
-        self.asr.set_property("word-syms", words_path)
+        props = self._get_graph_properties(graph_id)
+        self.asr.set_property("fst", props["fst_path"])
+        self.asr.set_property("word-syms", props["words_path"])
+        self.asr.set_property("phone-syms", props["phones_path"])
 
     def _get_graph_properties(self, graph_id):
         dirpath = os.path.join(self.graphdir, graph_id)
         if not is_safe_path(self.graphdir, dirpath):
             raise ValueError("Unsafe path detected!")
         else:
-            fst_path = os.path.join(dirpath, "HCLG.fst")
-            words_path = os.path.join(dirpath, "words.txt")
-            return fst_path, words_path
+            props = {"fst_path": os.path.join(dirpath, "HCLG.fst"),
+                "words_path": os.path.join(dirpath, "words.txt"),
+                "phones_path": os.path.join(dirpath, "phones.txt")}
+            return props
 
     def process_data(self, data):
         logger.debug('%s: Pushing buffer of size %d to pipeline' % (self.request_id, len(data)))
