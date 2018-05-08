@@ -15,7 +15,7 @@ import uuid
 import time
 import threading
 import functools
-from Queue import Queue
+import Queue
 
 import tornado.ioloop
 import tornado.options
@@ -48,9 +48,10 @@ class Application(tornado.web.Application):
             (r"/client/static/(.*)", tornado.web.StaticFileHandler, {'path': settings["static_path"]}),
         ]
         tornado.web.Application.__init__(self, handlers, **settings)
-        self.available_workers = Queue()
+        self.available_workers = Queue.Queue()
         self.status_listeners = set()
         self.num_requests_processed = 0
+        self.wait_to_serve = False
 
     def send_status_update_single(self, ws):
         status = dict(num_workers_available=self.available_workers.qzise(), num_requests_processed=self.num_requests_processed)
@@ -102,10 +103,11 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
     http://github.com/alumae/ruby-pocketsphinx-server.
     """
 
+    @tornado.gen.coroutine
     def prepare(self):
         self.id = str(uuid.uuid4())
         self.final_result = {"segments": []} #For security, don't return array as top level data structure.
-        self.final_result_queue = Queue()
+        self.final_result_queue = Queue.Queue()
         self.user_id = self.request.headers.get("device-id", "none")
         self.content_id = self.request.headers.get("content-id", "none")
         self.graph_id = self.request.headers.get("graph-id", "none")
@@ -116,18 +118,20 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)  
 
         try:
-            self.worker = self.application.available_workers.get()
+            if self.application.wait_to_serve:
+                self.worker = yield self.wait_for_worker()
+            else:
+                self.worker = self.application.available_workers.get_nowait()
             self.application.send_status_update()
             logging.info("%s: Using worker %s" % (self.id, self.__str__()))
             self.worker.set_client_socket(self)
-
             content_type = self.request.headers.get("Content-Type", None)
             if content_type:
                 content_type = content_type_to_caps(content_type)
                 logging.info("%s: Using content type: %s" % (self.id, content_type))
 
             self.worker.write_message(json.dumps(dict(id=self.id, content_type=content_type, user_id=self.user_id, content_id=self.content_id, graph_id=self.graph_id)))
-        except KeyError:
+        except Queue.Empty:
             logging.warn("%s: No worker available for client request" % self.id)
             self.set_status(503)
             self.finish("No workers available")
@@ -142,6 +146,11 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
 
     def put(self, *args, **kwargs):
         self.end_request(args, kwargs)
+
+    @tornado.concurrent.run_on_executor
+    def wait_for_worker(self):
+        logging.info("%s: Waiting for worker to become available" % self.id)
+        return self.application.available_workers.get(block=self.application)
 
     @tornado.concurrent.run_on_executor
     def get_final_result(self):
@@ -285,7 +294,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         self.graph_id = self.get_argument("graph-id", "none", True)
         self.worker = None
         try:
-            self.worker = self.application.available_workers.get()
+            self.worker = self.application.available_workers.get_nowait()
             self.application.send_status_update()
             logging.info("%s: Using worker %s" % (self.id, self.__str__()))
             self.worker.set_client_socket(self)
@@ -295,7 +304,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
                 logging.info("%s: Using content type: %s" % (self.id, content_type))
 
             self.worker.write_message(json.dumps(dict(id=self.id, content_type=content_type, user_id=self.user_id, content_id=self.content_id, graph_id=self.graph_id)))
-        except KeyError:
+        except Queue.Empty:
             logging.warn("%s: No worker available for client request" % self.id)
             event = dict(status=common.STATUS_NOT_AVAILABLE, message="No decoder available, try again later")
             self.send_event(event)
@@ -321,16 +330,19 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         else:
             self.worker.write_message(message, binary=True)
 
-
 def main():
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)8s %(asctime)s %(message)s ")
     logging.debug('Starting up server')
     from tornado.options import define, options
     define("certfile", default="", help="certificate file for secured SSL connection")
     define("keyfile", default="", help="key file for secured SSL connection")
+    define("block", default=False, type=bool, help="let HTTP wait until a worker becomes available, \
+            doesn't work for websockets currently")
 
     tornado.options.parse_command_line()
     app = Application()
+    if options.block:
+        app.wait_to_serve = True
     if options.certfile and options.keyfile:
         ssl_options = {
           "certfile": options.certfile,
