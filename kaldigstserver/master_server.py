@@ -54,7 +54,7 @@ class Application(tornado.web.Application):
         self.wait_to_serve = False
 
     def send_status_update_single(self, ws):
-        status = dict(num_workers_available=self.available_workers.qzise(), num_requests_processed=self.num_requests_processed)
+        status = dict(num_workers_available=self.available_workers.qsize(), num_requests_processed=self.num_requests_processed)
         ws.write_message(json.dumps(status))
 
     def send_status_update(self):
