@@ -27,6 +27,7 @@ import settings
 import common
 import concurrent.futures
 
+from models import LessonRecord, lesson_record_from_cookie
 
 class Application(tornado.web.Application):
     def __init__(self):
@@ -52,6 +53,7 @@ class Application(tornado.web.Application):
         self.status_listeners = set()
         self.num_requests_processed = 0
         self.wait_to_serve = False
+        self.record_key = None
 
     def send_status_update_single(self, ws):
         status = dict(num_workers_available=self.available_workers.qsize(), num_requests_processed=self.num_requests_processed)
@@ -292,6 +294,18 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         self.user_id = self.get_argument("user-id", "none", True)
         self.content_id = self.get_argument("content-id", "none", True)
         self.graph_id = self.get_argument("graph-id", "none", True)
+        self.record_cookie = self.get_argument("record-cookie", "none", True)
+
+        #Make sure lesson_record can be loaded:
+        try:
+            record = lesson_record_from_cookie(self.record_cookie, self.application.record_key)
+        except (LessonRecord.DoesNotExist, itsdangerous.BadData):
+            logging.warn("%s: Bad lesson record cookie." % self.id)
+            event = dict(status=common.STATUS_NOT_ALLOWED, message="Bad lesson record cookie")
+            self.send_event(event)
+            self.close()
+            return
+
         self.worker = None
         try:
             self.worker = self.application.available_workers.get_nowait()
@@ -303,7 +317,10 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
             if content_type:
                 logging.info("%s: Using content type: %s" % (self.id, content_type))
 
-            self.worker.write_message(json.dumps(dict(id=self.id, content_type=content_type, user_id=self.user_id, content_id=self.content_id, graph_id=self.graph_id)))
+            self.worker.write_message(json.dumps(dict(id=self.id, 
+                content_type=content_type, user_id=self.user_id, 
+                content_id=self.content_id, graph_id=self.graph_id, 
+                record_cookie=self.record_cookie)))
         except Queue.Empty:
             logging.warn("%s: No worker available for client request" % self.id)
             event = dict(status=common.STATUS_NOT_AVAILABLE, message="No decoder available, try again later")
@@ -338,11 +355,14 @@ def main():
     define("keyfile", default="", help="key file for secured SSL connection")
     define("block", default=False, type=bool, help="let HTTP wait until a worker becomes available, \
             doesn't work for websockets currently")
+    define("recordkey", default="", help="secret key to decipher record-cookie")
 
     tornado.options.parse_command_line()
     app = Application()
     if options.block:
         app.wait_to_serve = True
+    if options.recordkey:
+        app.record_key = options.recordkey
     if options.certfile and options.keyfile:
         ssl_options = {
           "certfile": options.certfile,

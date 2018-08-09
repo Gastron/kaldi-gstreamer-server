@@ -102,6 +102,7 @@ class ServerWebsocket(WebSocketClient):
             content_type = props['content_type']
             self.request_id = props['id']
             self.graph_id = props['graph_id']
+            self.record_cookie = props['record_cookie']
             self.num_segments = 0
             self.decoder_pipeline.init_request(self.request_id, content_type, self.graph_id)
             self.last_decoder_message = time.time()
@@ -333,6 +334,9 @@ class ServerWebsocket(WebSocketClient):
             
     @tornado.gen.coroutine
     def post_process_full(self, full_result):
+        #Add the extra info for posting the result to DB:
+        full_result["graph-id"] = self.graph_id
+        full_result["record-cookie"] = self.record_cookie
         if self.full_post_processor:
             self.full_post_processor.stdin.write("%s\n\n" % json.dumps(full_result))
             self.full_post_processor.stdin.flush()
