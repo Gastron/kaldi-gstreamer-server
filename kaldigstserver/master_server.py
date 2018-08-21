@@ -378,7 +378,7 @@ def main():
     tornado.ioloop.IOLoop.instance().start()
 
 def load_instance_config(instancepath):
-    return imp.load_source('instance.config', instancepath)
+    return imp.load_source('instance.config', instancepath+"/config.py")
 
 def setup_db(url):
     """ Connects to the database, then imports. """
