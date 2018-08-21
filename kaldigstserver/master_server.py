@@ -27,7 +27,9 @@ import settings
 import common
 import concurrent.futures
 
-from models import LessonRecord, lesson_record_from_cookie
+import pymodm as modm
+import configparser
+import StringIO
 
 class Application(tornado.web.Application):
     def __init__(self):
@@ -355,14 +357,16 @@ def main():
     define("keyfile", default="", help="key file for secured SSL connection")
     define("block", default=False, type=bool, help="let HTTP wait until a worker becomes available, \
             doesn't work for websockets currently")
-    define("recordkey", default="", help="secret key to decipher record-cookie")
-
+    define("instancepath", default="/opt/instance/", help = "path to instance directory") 
+    
     tornado.options.parse_command_line()
+    instance_config = load_instance_config(options.instancepath)
+    setup_db(instance_config["MONGO_DATABASE_URI"])
+    from models import LessonRecord, lesson_record_from_cookie
     app = Application()
+    app.record_key = instance_config["SECRET_KEY"]
     if options.block:
         app.wait_to_serve = True
-    if options.recordkey:
-        app.record_key = options.recordkey
     if options.certfile and options.keyfile:
         ssl_options = {
           "certfile": options.certfile,
@@ -373,6 +377,24 @@ def main():
     else:
         app.listen(options.port)
     tornado.ioloop.IOLoop.instance().start()
+
+def load_instance_config(instancepath):
+    parser = ConfigParser.RawConfigParser()
+    dummysection = "dummysection"
+    with open(instancepath + "/config.py") as fi:
+        data = fi.read()
+    ini_fp = "[" + dummysection + "]\n" + data
+    config = parser.readfp(StringIO.StringIO(ini_fp))
+    return dict(config[dummysection])
+
+
+
+
+
+
+def setup_db(url):
+    """ Connects to the database, then imports. """
+    modm.connect(url)
 
 
 if __name__ == "__main__":
