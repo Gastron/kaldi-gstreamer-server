@@ -15,7 +15,7 @@ import uuid
 import time
 import threading
 import functools
-import Queue
+import queue
 
 import tornado.ioloop
 import tornado.options
@@ -50,7 +50,7 @@ class Application(tornado.web.Application):
             (r"/client/static/(.*)", tornado.web.StaticFileHandler, {'path': settings["static_path"]}),
         ]
         tornado.web.Application.__init__(self, handlers, **settings)
-        self.available_workers = Queue.Queue()
+        self.available_workers = queue.queue()
         self.status_listeners = set()
         self.num_requests_processed = 0
         self.wait_to_serve = False
@@ -110,7 +110,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
     def prepare(self):
         self.id = str(uuid.uuid4())
         self.final_result = {"segments": []} #For security, don't return array as top level data structure.
-        self.final_result_queue = Queue.Queue()
+        self.final_result_queue = queue.queue()
         self.user_id = self.request.headers.get("device-id", "none")
         self.content_id = self.request.headers.get("content-id", "none")
         self.graph_id = self.request.headers.get("graph-id", "none")
@@ -134,7 +134,7 @@ class HttpChunkedRecognizeHandler(tornado.web.RequestHandler):
                 logging.info("%s: Using content type: %s" % (self.id, content_type))
 
             self.worker.write_message(json.dumps(dict(id=self.id, content_type=content_type, user_id=self.user_id, content_id=self.content_id, graph_id=self.graph_id)))
-        except Queue.Empty:
+        except queue.Empty:
             logging.warn("%s: No worker available for client request" % self.id)
             self.set_status(503)
             self.finish("No workers available")
@@ -259,7 +259,7 @@ class WorkerSocketHandler(tornado.websocket.WebSocketHandler):
         logging.info("Worker " + self.__str__() + " leaving")
         with self.application.available_workers.mutex: 
             try:  
-                self.application.available_workers.queue.remove(self) #Queue.queue is a collections.deque
+                self.application.available_workers.queue.remove(self) #queue.queue is a collections.deque
             except ValueError:
                 pass #self had been removed from queue with .get() already
         if self.client_socket:
@@ -322,7 +322,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
                 content_type=content_type, user_id=self.user_id, 
                 content_id=self.content_id, graph_id=self.graph_id, 
                 record_cookie=self.record_cookie)))
-        except Queue.Empty:
+        except queue.Empty:
             logging.warn("%s: No worker available for client request" % self.id)
             event = dict(status=common.STATUS_NOT_AVAILABLE, message="No decoder available, try again later")
             self.send_event(event)
