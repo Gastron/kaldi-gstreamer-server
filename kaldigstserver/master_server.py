@@ -28,7 +28,7 @@ import common
 import concurrent.futures
 
 import pymodm as modm
-import configparser
+import ConfigParser
 import StringIO
 
 class Application(tornado.web.Application):
