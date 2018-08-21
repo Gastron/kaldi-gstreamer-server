@@ -361,10 +361,10 @@ def main():
     
     tornado.options.parse_command_line()
     instance_config = load_instance_config(options.instancepath)
-    setup_db(instance_config["MONGO_DATABASE_URI"])
+    setup_db(instance_config["mongo_database_uri"])
     from models import LessonRecord, lesson_record_from_cookie
     app = Application()
-    app.record_key = instance_config["SECRET_KEY"]
+    app.record_key = instance_config["secret_key"]
     if options.block:
         app.wait_to_serve = True
     if options.certfile and options.keyfile:
@@ -384,8 +384,8 @@ def load_instance_config(instancepath):
     with open(instancepath + "/config.py") as fi:
         data = fi.read()
     ini_fp = "[" + dummysection + "]\n" + data
-    config = parser.readfp(StringIO.StringIO(ini_fp))
-    return dict(config[dummysection])
+    parser.readfp(StringIO.StringIO(ini_fp))
+    return dict(parser.items(dummysection))
 
 
 
