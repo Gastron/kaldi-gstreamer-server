@@ -28,8 +28,7 @@ import common
 import concurrent.futures
 
 import pymodm as modm
-import ConfigParser
-import StringIO
+import imp
 
 class Application(tornado.web.Application):
     def __init__(self):
@@ -361,10 +360,10 @@ def main():
     
     tornado.options.parse_command_line()
     instance_config = load_instance_config(options.instancepath)
-    setup_db(instance_config["mongo_database_uri"])
+    setup_db(instance_config.MONGO_DATABASE_URI)
     from models import LessonRecord, lesson_record_from_cookie
     app = Application()
-    app.record_key = instance_config["secret_key"]
+    app.record_key = instance_config.SECRET_KEY
     if options.block:
         app.wait_to_serve = True
     if options.certfile and options.keyfile:
@@ -379,18 +378,7 @@ def main():
     tornado.ioloop.IOLoop.instance().start()
 
 def load_instance_config(instancepath):
-    parser = ConfigParser.RawConfigParser()
-    dummysection = "dummysection"
-    with open(instancepath + "/config.py") as fi:
-        data = fi.read()
-    ini_fp = "[" + dummysection + "]\n" + data
-    parser.readfp(StringIO.StringIO(ini_fp))
-    return dict(parser.items(dummysection))
-
-
-
-
-
+    return imp.load_source('instance.config', instancepath)
 
 def setup_db(url):
     """ Connects to the database, then imports. """
