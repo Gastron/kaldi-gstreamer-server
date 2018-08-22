@@ -27,10 +27,6 @@ import settings
 import common
 import concurrent.futures
 
-import pymodm as modm
-import itsdangerous
-import imp
-
 class Application(tornado.web.Application):
     def __init__(self):
         settings = dict(
@@ -291,11 +287,18 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
 
     def _test_cookie(self):
         #Make sure lesson_record can be loaded:
-        try:
-            lesson_record_from_cookie(self.record_cookie, self.application.record_key)
+        data = json.dumps({"record-cookie": self.record_cookie})
+        http_client = tornado.httpclient.HTTPClient()
+        response = http_client.fetch("http://web/api/verify-record-cookie", 
+                headers = {"content-type": "application/json"},
+                method = 'POST',
+                body = data)
+        if response.body == b"OK":
+            logging.info("%s: Record-cookie checks out" % self.id)
             return True
-        except (LessonRecord.DoesNotExist, itsdangerous.BadData):
-            logging.warn("%s: Bad lesson record cookie." % self.id)
+        else:
+            logging.info("%s: Record-cookie failed, error: %s" % (self.id, response.body))
+            return False
 
     def open(self):
         self.id = str(uuid.uuid4())
@@ -305,16 +308,15 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         self.content_id = self.get_argument("content-id", "none", True)
         self.graph_id = self.get_argument("graph-id", "none", True)
         self.record_cookie = self.get_argument("record-cookie", "none", True)
-        if not self._test_cookie():
-            pass
-            #Do not mind for now, but add the cookie! TODO
-            # then uncomment:    
-            #event = dict(status=common.STATUS_NOT_ALLOWED, message="Bad lesson record cookie")
-            #self.send_event(event)
-            #self.close()
-            #return False
-
         self.worker = None
+
+        logging.info("%s: Record-cookie: %s" % (self.id, self.record_cookie))
+        if not self._test_cookie():
+            event = dict(status=common.STATUS_NOT_ALLOWED, message="Bad lesson record cookie")
+            self.send_event(event)
+            self.close()
+            return
+
         try:
             self.worker = self.application.available_workers.get_nowait()
             self.application.send_status_update()
@@ -367,11 +369,7 @@ def main():
     define("instancepath", default="/opt/instance/", help = "path to instance directory") 
     
     tornado.options.parse_command_line()
-    instance_config = load_instance_config(options.instancepath)
-    setup_db(instance_config.MONGO_DATABASE_URI)
-    from models import LessonRecord, lesson_record_from_cookie
     app = Application()
-    app.record_key = instance_config.SECRET_KEY
     if options.block:
         app.wait_to_serve = True
     if options.certfile and options.keyfile:
@@ -384,14 +382,6 @@ def main():
     else:
         app.listen(options.port)
     tornado.ioloop.IOLoop.instance().start()
-
-def load_instance_config(instancepath):
-    return imp.load_source('instance.config', instancepath+"/config.py")
-
-def setup_db(url):
-    """ Connects to the database, then imports. """
-    modm.connect(url)
-
 
 if __name__ == "__main__":
     main()
