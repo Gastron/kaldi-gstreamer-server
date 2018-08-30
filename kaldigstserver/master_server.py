@@ -27,6 +27,8 @@ import settings
 import common
 import concurrent.futures
 
+import tornado.httpclient
+
 class Application(tornado.web.Application):
     def __init__(self):
         settings = dict(
