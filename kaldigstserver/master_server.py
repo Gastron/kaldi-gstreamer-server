@@ -51,7 +51,7 @@ class Application(tornado.web.Application):
         self.status_listeners = set()
         self.num_requests_processed = 0
         self.wait_to_serve = False
-        self.record_key = None
+        self.cookie_test_url = ""
 
     def send_status_update_single(self, ws):
         status = dict(num_workers_available=self.available_workers.qsize(), num_requests_processed=self.num_requests_processed)
@@ -289,7 +289,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         #Make sure lesson_record can be loaded:
         data = json.dumps({"record-cookie": self.record_cookie})
         http_client = tornado.httpclient.HTTPClient()
-        response = http_client.fetch("http://web/api/verify-record-cookie", 
+        response = http_client.fetch(self.app.cookie_test_url,
                 headers = {"content-type": "application/json"},
                 method = 'POST',
                 body = data)
@@ -366,12 +366,14 @@ def main():
     define("keyfile", default="", help="key file for secured SSL connection")
     define("block", default=False, type=bool, help="let HTTP wait until a worker becomes available, \
             doesn't work for websockets currently")
-    define("instancepath", default="/opt/instance/", help = "path to instance directory") 
+    define("cookietesturl", default="http://web/captaina/api/verify-record-cookie",
+        help = "URL to POST to for testing the record cookie")
     
     tornado.options.parse_command_line()
     app = Application()
     if options.block:
         app.wait_to_serve = True
+    app.cookie_test_url = options.cookietesturl
     if options.certfile and options.keyfile:
         ssl_options = {
           "certfile": options.certfile,
