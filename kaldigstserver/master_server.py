@@ -291,7 +291,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         #Make sure lesson_record can be loaded:
         data = json.dumps({"record-cookie": self.record_cookie})
         http_client = tornado.httpclient.HTTPClient()
-        response = http_client.fetch(self.app.cookie_test_url,
+        response = http_client.fetch(self.application.cookie_test_url,
                 headers = {"content-type": "application/json"},
                 method = 'POST',
                 body = data)
