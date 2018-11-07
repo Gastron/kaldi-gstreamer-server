@@ -288,7 +288,7 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
         self.write_message(json.dumps(event))
 
     def _test_cookie(self):
-        #Make sure lesson_record can be loaded:
+        #Make sure record can be loaded:
         data = json.dumps({"record-cookie": self.record_cookie})
         http_client = tornado.httpclient.HTTPClient()
         response = http_client.fetch(self.application.cookie_test_url,
@@ -360,7 +360,6 @@ class DecoderSocketHandler(tornado.websocket.WebSocketHandler):
             self.worker.write_message(message, binary=True)
 
 def main():
-    global LessonRecord, lesson_record_from_cookie
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)8s %(asctime)s %(message)s ")
     logging.debug('Starting up server')
     from tornado.options import define, options
